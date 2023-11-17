@@ -25,7 +25,7 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
 
     const menuCollections = client.db("BistroBossDB").collection("menus")
     const reviewCollections = client.db("BistroBossDB").collection("reviews")
@@ -36,7 +36,7 @@ async function run() {
     // veifyToken
 
     const verifyToken = (req, res, next) => {
-      console.log("Inside verifyToken: ", req.headers)
+      // console.log("Inside verifyToken: ", req.headers)
       if (!req.headers.authorization) {
         return res.status(401).send({ message: 'Unauthorized' })
       }
@@ -49,20 +49,47 @@ async function run() {
           return res.status(403).send({ message: 'Forbidden' })
         }
         req.decoded = decoded
+        console.log("decoded value is:", req.decoded)
 
         next()
       })
 
     }
 
+    const adminVerify = async (req, res, next) => {
+      const email = req.decoded.email;
+      const query = { email: email }
+      const user = await userCollections.findOne(query)
+      const isAdmin = user?.role === 'admin'
+      if (!isAdmin) {
+        return res.status(403).send({ message: "Forbidden Access" })
+      }
+      next()
+    }
+
     // Users
-    app.get("/users", verifyToken, async (req, res) => {
-      console.log(req.headers)
+    app.get("/users", verifyToken, adminVerify, async (req, res) => {
+      // console.log(req.headers)
       const users = userCollections.find()
       const result = await users.toArray()
       res.send(result)
     })
 
+    app.get('/users/admin/:email', verifyToken, async (req, res) => {
+      const email = req.params.email;
+
+      if (email !== req.decoded.email) {
+        return res.status(403).send({ message: 'forbidden access' })
+      }
+
+      const query = { email: email };
+      const user = await userCollections.findOne(query);
+      let admin = false;
+      if (user) {
+        admin = user?.role === 'admin';
+      }
+      res.send({ admin });
+    })
 
     // Menu data
     app.get("/menus", async (req, res) => {
@@ -132,7 +159,7 @@ async function run() {
     })
     // users
 
-    app.patch('/users/admin/:id', async (req, res) => {
+    app.patch('/users/admin/:id', verifyToken, adminVerify, async (req, res) => {
       const id = req.params.id
       const filter = { _id: new ObjectId(id) }
       const updatedDoc = {
@@ -143,7 +170,7 @@ async function run() {
       const result = await userCollections.updateOne(filter, updatedDoc)
       res.send(result)
     })
-    app.delete('/users/:id', async (req, res) => {
+    app.delete('/users/:id', verifyToken, adminVerify, async (req, res) => {
       const id = req.params.id
       const query = { _id: new ObjectId(id) }
       const result = await userCollections.deleteOne(query)
@@ -158,6 +185,7 @@ async function run() {
   }
 }
 run().catch(console.dir);
+
 
 
 app.get('/', (req, res) => res.send('Bistro Boss Is Running...........'))
